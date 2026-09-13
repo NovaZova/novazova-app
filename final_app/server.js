@@ -65,6 +65,17 @@ async function api(req,res){
    if(!u||!auth[u.id]||!(await verifyPassword(password,auth[u.id])))return json(res,401,{error:'Incorrect email or password.'});
    const token=crypto.randomBytes(32).toString('hex');sessions.set(token,u);setCookie(res,'nova_session',token);return json(res,200,{user:cleanUser(u)});
   }
+  if(req.method==='POST'&&pathname==='/api/reset-password'){
+   const {email,phone,newPassword}=await body(req);
+   if(!email||!phone||!newPassword) return json(res,400,{error:'Please fill all fields.'});
+   if(newPassword.length<8)return json(res,400,{error:'Password must be at least 8 characters.'});
+   const users=readUsers();
+   const u=users.find(x=>x.email.toLowerCase()===String(email||'').toLowerCase()&&String(x.phone)===String(phone));
+   if(!u)return json(res,404,{error:'No account matches that email and phone number.'});
+   const authFile=path.join(DATA,'auth.json');let auth=fs.existsSync(authFile)?JSON.parse(fs.readFileSync(authFile,'utf8')||'{}'):{};
+   auth[u.id]=await hashPassword(newPassword);fs.writeFileSync(authFile,JSON.stringify(auth,null,2));
+   return json(res,200,{ok:true});
+  }
   if(req.method==='GET'&&pathname==='/api/users'){
    if(!requireAdminAuth(req,res))return;
    return json(res,200,{users:readUsers()});
@@ -89,3 +100,4 @@ function serve(req,res){
 }
 const PORT=process.env.PORT||3000;
 http.createServer(serve).listen(PORT,'0.0.0.0',()=>console.log(`Novazova running at http://localhost:${PORT}`));
+
