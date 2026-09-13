@@ -3,12 +3,33 @@ const fs=require('fs');
 const path=require('path');
 const crypto=require('crypto');
 const url=require('url');
+let nodemailer=null;try{nodemailer=require('nodemailer');}catch(e){}
+
+const GMAIL_USER=process.env.GMAIL_USER||'';
+const GMAIL_APP_PASSWORD=process.env.GMAIL_APP_PASSWORD||'';
+let mailer=null;
+if(nodemailer&&GMAIL_USER&&GMAIL_APP_PASSWORD){
+ mailer=nodemailer.createTransport({service:'gmail',auth:{user:GMAIL_USER,pass:GMAIL_APP_PASSWORD}});
+}
+async function sendOtpEmail(to,otp,purpose){
+ const subject=purpose==='reset'?'Novazova password reset code':'Novazova signup verification code';
+ const text=`Your Novazova ${purpose==='reset'?'password reset':'signup verification'} code is: ${otp}\n\nThis code expires in 10 minutes. If you didn't request this, you can ignore this email.`;
+ if(mailer){
+  await mailer.sendMail({from:`Novazova <${GMAIL_USER}>`,to,subject,text});
+ }else{
+  console.log(`\n[DEV MODE - no email credentials set] OTP for ${to} (${purpose}): ${otp}\n`);
+ }
+}
+function genOtp(){return String(crypto.randomInt(100000,1000000));}
+const pendingSignups=new Map();
+const pendingResets=new Map();
+const OTP_TTL_MS=10*60*1000;
 
 const ROOT=__dirname;
 const DATA=path.join(ROOT,'data');
 const CSV=path.join(DATA,'users.csv');
 if(!fs.existsSync(DATA)) fs.mkdirSync(DATA,{recursive:true});
-if(!fs.existsSync(CSV)) fs.writeFileSync(CSV,'id,name,email,phone,age,created_at\n');
+if(!fs.existsSync(CSV)) fs.writeFileSync(CSV,'id,name,email,age,created_at\n');
 
 const sessions=new Map();
 const ADMIN_USER=process.env.ADMIN_USER||'admin';
@@ -36,28 +57,39 @@ function body(req){return new Promise((resolve,reject)=>{let b='';req.on('data',
 function esc(v){return '"'+String(v??'').replace(/"/g,'""')+'"';}
 function readUsers(){
  const lines=fs.readFileSync(CSV,'utf8').trim().split(/\r?\n/).slice(1).filter(Boolean);
- return lines.map(line=>{const a=[];let cur='',q=false;for(let i=0;i<line.length;i++){const c=line[i];if(c==='"'){if(q&&line[i+1]==='"'){cur+='"';i++;}else q=!q;}else if(c===','&&!q){a.push(cur);cur='';}else cur+=c;}a.push(cur);return {id:a[0],name:a[1],email:a[2],phone:a[3],age:a[4],created_at:a[5]};});
+ return lines.map(line=>{const a=[];let cur='',q=false;for(let i=0;i<line.length;i++){const c=line[i];if(c==='"'){if(q&&line[i+1]==='"'){cur+='"';i++;}else q=!q;}else if(c===','&&!q){a.push(cur);cur='';}else cur+=c;}a.push(cur);return {id:a[0],name:a[1],email:a[2],age:a[3],created_at:a[4]};});
 }
 function hashPassword(password,salt=crypto.randomBytes(16).toString('hex')){return new Promise((resolve,reject)=>crypto.scrypt(password,salt,64,(e,k)=>e?reject(e):resolve(`${salt}:${k.toString('hex')}`)));}
 async function verifyPassword(password,stored){const [salt,key]=stored.split(':');return new Promise((resolve,reject)=>crypto.scrypt(password,salt,64,(e,k)=>{if(e)return reject(e);resolve(key.length===k.toString('hex').length&&crypto.timingSafeEqual(Buffer.from(key,'hex'),k));}));}
 function setCookie(res,name,value){res.setHeader('Set-Cookie',`${name}=${value}; HttpOnly; SameSite=Lax; Path=/; Max-Age=604800`);}
-function cleanUser(u){return {id:u.id,name:u.name,email:u.email,phone:u.phone,age:u.age,created_at:u.created_at};}
+function cleanUser(u){return {id:u.id,name:u.name,email:u.email,age:u.age,created_at:u.created_at};}
 async function api(req,res){
  try{
   const pathname=url.parse(req.url).pathname;
   if(req.method==='OPTIONS'){res.writeHead(204,{'Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'GET,POST,OPTIONS','Access-Control-Allow-Headers':'Content-Type','Access-Control-Allow-Credentials':'true'});return res.end();}
   if(req.method==='GET'&&pathname==='/api/health') return json(res,200,{ok:true,service:'novazova'});
-  if(req.method==='POST'&&pathname==='/api/register'){
-   const {name,email,phone,age,password}=await body(req);
-   if(!name||!email||!phone||!age||!password) return json(res,400,{error:'Please fill all fields.'});
+  if(req.method==='POST'&&pathname==='/api/register/start'){
+   const {name,email,age,password}=await body(req);
+   if(!name||!email||!age||!password) return json(res,400,{error:'Please fill all fields.'});
    if(password.length<8)return json(res,400,{error:'Password must be at least 8 characters.'});
    if(!/^\S+@\S+\.\S+$/.test(email))return json(res,400,{error:'Enter a valid email address.'});
    const users=readUsers();if(users.some(u=>u.email.toLowerCase()===email.toLowerCase()))return json(res,409,{error:'An account with this email already exists.'});
-   const id=crypto.randomUUID();const created=new Date().toISOString();const hash=await hashPassword(password);
-   // Password hash is intentionally NOT stored in the spreadsheet. Keep it in a private sidecar.
-   const authFile=path.join(DATA,'auth.json');let auth={};if(fs.existsSync(authFile))auth=JSON.parse(fs.readFileSync(authFile,'utf8')||'{}');auth[id]=hash;fs.writeFileSync(authFile,JSON.stringify(auth,null,2));
-   fs.appendFileSync(CSV,[id,name,email,phone,age,created].map(esc).join(',')+'\n');
-   const user={id,name,email,phone,age,created_at:created};const token=crypto.randomBytes(32).toString('hex');sessions.set(token,user);setCookie(res,'nova_session',token);return json(res,201,{user});
+   const otp=genOtp();const hash=await hashPassword(password);
+   pendingSignups.set(email.toLowerCase(),{otp,expiresAt:Date.now()+OTP_TTL_MS,name,email,age,hash});
+   try{await sendOtpEmail(email,otp,'signup');}catch(e){console.error('Email send failed:',e.message);return json(res,500,{error:'Could not send verification email. Try again shortly.'});}
+   return json(res,200,{ok:true});
+  }
+  if(req.method==='POST'&&pathname==='/api/register/verify'){
+   const {email,otp}=await body(req);
+   const pending=pendingSignups.get(String(email||'').toLowerCase());
+   if(!pending) return json(res,400,{error:'No pending signup for this email. Please start again.'});
+   if(Date.now()>pending.expiresAt){pendingSignups.delete(email.toLowerCase());return json(res,400,{error:'Code expired. Please start signup again.'});}
+   if(String(otp)!==pending.otp) return json(res,400,{error:'Incorrect code. Please try again.'});
+   const id=crypto.randomUUID();const created=new Date().toISOString();
+   const authFile=path.join(DATA,'auth.json');let auth={};if(fs.existsSync(authFile))auth=JSON.parse(fs.readFileSync(authFile,'utf8')||'{}');auth[id]=pending.hash;fs.writeFileSync(authFile,JSON.stringify(auth,null,2));
+   fs.appendFileSync(CSV,[id,pending.name,pending.email,pending.age,created].map(esc).join(',')+'\n');
+   pendingSignups.delete(email.toLowerCase());
+   const user={id,name:pending.name,email:pending.email,age:pending.age,created_at:created};const token=crypto.randomBytes(32).toString('hex');sessions.set(token,user);setCookie(res,'nova_session',token);return json(res,201,{user});
   }
   if(req.method==='POST'&&pathname==='/api/login'){
    const {email,password}=await body(req);const users=readUsers();const u=users.find(x=>x.email.toLowerCase()===String(email||'').toLowerCase());
@@ -65,15 +97,25 @@ async function api(req,res){
    if(!u||!auth[u.id]||!(await verifyPassword(password,auth[u.id])))return json(res,401,{error:'Incorrect email or password.'});
    const token=crypto.randomBytes(32).toString('hex');sessions.set(token,u);setCookie(res,'nova_session',token);return json(res,200,{user:cleanUser(u)});
   }
-  if(req.method==='POST'&&pathname==='/api/reset-password'){
-   const {email,phone,newPassword}=await body(req);
-   if(!email||!phone||!newPassword) return json(res,400,{error:'Please fill all fields.'});
-   if(newPassword.length<8)return json(res,400,{error:'Password must be at least 8 characters.'});
-   const users=readUsers();
-   const u=users.find(x=>x.email.toLowerCase()===String(email||'').toLowerCase()&&String(x.phone)===String(phone));
-   if(!u)return json(res,404,{error:'No account matches that email and phone number.'});
+  if(req.method==='POST'&&pathname==='/api/reset-password/start'){
+   const {email}=await body(req);
+   const users=readUsers();const u=users.find(x=>x.email.toLowerCase()===String(email||'').toLowerCase());
+   if(!u)return json(res,404,{error:'No account found with that email.'});
+   const otp=genOtp();
+   pendingResets.set(email.toLowerCase(),{otp,expiresAt:Date.now()+OTP_TTL_MS,userId:u.id});
+   try{await sendOtpEmail(email,otp,'reset');}catch(e){console.error('Email send failed:',e.message);return json(res,500,{error:'Could not send reset email. Try again shortly.'});}
+   return json(res,200,{ok:true});
+  }
+  if(req.method==='POST'&&pathname==='/api/reset-password/verify'){
+   const {email,otp,newPassword}=await body(req);
+   if(!newPassword||newPassword.length<8)return json(res,400,{error:'Password must be at least 8 characters.'});
+   const pending=pendingResets.get(String(email||'').toLowerCase());
+   if(!pending) return json(res,400,{error:'No pending reset for this email. Please start again.'});
+   if(Date.now()>pending.expiresAt){pendingResets.delete(email.toLowerCase());return json(res,400,{error:'Code expired. Please start again.'});}
+   if(String(otp)!==pending.otp) return json(res,400,{error:'Incorrect code. Please try again.'});
    const authFile=path.join(DATA,'auth.json');let auth=fs.existsSync(authFile)?JSON.parse(fs.readFileSync(authFile,'utf8')||'{}'):{};
-   auth[u.id]=await hashPassword(newPassword);fs.writeFileSync(authFile,JSON.stringify(auth,null,2));
+   auth[pending.userId]=await hashPassword(newPassword);fs.writeFileSync(authFile,JSON.stringify(auth,null,2));
+   pendingResets.delete(email.toLowerCase());
    return json(res,200,{ok:true});
   }
   if(req.method==='GET'&&pathname==='/api/users'){
