@@ -106,21 +106,43 @@ function continueGuest(){
 function showLoginFromWelcome(){
   hideWelcome(); setTimeout(()=>openModal('loginModal'),120);
 }
-async function register(e){
+let pendingRegisterEmail=null;
+async function startRegister(e){
   e.preventDefault();
   const name=document.getElementById('regName').value.trim();
   const email=document.getElementById('regEmail').value.trim();
-  const phone=document.getElementById('regPhone').value.trim();
   const age=Number(document.getElementById('regAge').value);
   const password=document.getElementById('regPassword').value;
   const confirm=document.getElementById('regConfirm').value;
   if(password!==confirm){toast('Passwords do not match');return;}
   try{
-    const r=await apiFetch('/api/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,email,phone,age,password})});
+    const r=await apiFetch('/api/register/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,email,age,password})});
     const data=await r.json();
-    if(!r.ok) throw new Error(data.error||'Registration failed');
-    currentUser=data.user; localStorage.setItem('novaUser',JSON.stringify(data.user)); hideWelcome(); toast(`Welcome, ${data.user.name.split(' ')[0]}! Account created ✨`);
+    if(!r.ok) throw new Error(data.error||'Could not send verification code');
+    pendingRegisterEmail=email;
+    document.getElementById('registerForm').style.display='none';
+    document.getElementById('registerOtpForm').style.display='grid';
+    document.getElementById('registerOtpNote').textContent=`We sent a 6-digit code to ${email}. Enter it below to finish creating your account.`;
+    toast('Verification code sent ✨');
   }catch(err){toast(err.message);}
+}
+async function verifyRegister(e){
+  e.preventDefault();
+  const otp=document.getElementById('regOtp').value.trim();
+  try{
+    const r=await apiFetch('/api/register/verify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:pendingRegisterEmail,otp})});
+    const data=await r.json();
+    if(!r.ok) throw new Error(data.error||'Verification failed');
+    currentUser=data.user; localStorage.setItem('novaUser',JSON.stringify(data.user)); hideWelcome(); toast(`Welcome, ${data.user.name.split(' ')[0]}! Account created ✨`);
+    backToRegisterForm();
+  }catch(err){toast(err.message);}
+}
+function backToRegisterForm(){
+  document.getElementById('registerForm').style.display='grid';
+  document.getElementById('registerOtpForm').style.display='none';
+  document.getElementById('registerForm').reset();
+  document.getElementById('registerOtpForm').reset();
+  pendingRegisterEmail=null;
 }
 async function login(e){
   e.preventDefault();
@@ -133,18 +155,38 @@ async function login(e){
     currentUser=data.user; localStorage.setItem('novaUser',JSON.stringify(data.user)); closeModal('loginModal'); toast(`Welcome back, ${data.user.name.split(' ')[0]} ✨`);
   }catch(err){toast(err.message);}
 }
-async function resetPassword(e){
+let pendingResetEmail=null;
+async function startReset(e){
   e.preventDefault();
   const email=document.getElementById('resetEmail').value.trim();
-  const phone=document.getElementById('resetPhone').value.trim();
+  try{
+    const r=await apiFetch('/api/reset-password/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});
+    const data=await r.json();
+    if(!r.ok) throw new Error(data.error||'Could not send code');
+    pendingResetEmail=email;
+    document.getElementById('resetStep1Form').style.display='none';
+    document.getElementById('resetStep2Form').style.display='grid';
+    document.getElementById('resetStep1Note').textContent=`We sent a 6-digit code to ${email}. Enter it below with your new password.`;
+    toast('Reset code sent ✨');
+  }catch(err){toast(err.message);}
+}
+async function verifyReset(e){
+  e.preventDefault();
+  const otp=document.getElementById('resetOtp').value.trim();
   const newPassword=document.getElementById('resetNewPassword').value;
   const confirm=document.getElementById('resetConfirm').value;
   if(newPassword!==confirm){toast('Passwords do not match');return;}
   try{
-    const r=await apiFetch('/api/reset-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,phone,newPassword})});
+    const r=await apiFetch('/api/reset-password/verify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:pendingResetEmail,otp,newPassword})});
     const data=await r.json();
     if(!r.ok) throw new Error(data.error||'Could not reset password');
-    closeModal('resetModal'); toast('Password reset! You can log in now ✨'); setTimeout(()=>openModal('loginModal'),300);
+    closeModal('resetModal'); toast('Password reset! You can log in now ✨');
+    document.getElementById('resetStep1Form').style.display='grid';
+    document.getElementById('resetStep2Form').style.display='none';
+    document.getElementById('resetStep1Form').reset();
+    document.getElementById('resetStep2Form').reset();
+    pendingResetEmail=null;
+    setTimeout(()=>openModal('loginModal'),300);
   }catch(err){toast(err.message);}
 }
 
