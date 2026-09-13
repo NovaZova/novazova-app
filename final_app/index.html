@@ -102,14 +102,19 @@
       <p class="eyebrow">NOVAZOVA ACCOUNT</p>
       <h2>Welcome to <em>Novazova.</em></h2>
       <p class="welcome-copy">Create an account to save your details and orders, or continue as a guest if you are not ready to sign in.</p>
-      <form onsubmit="register(event)" class="modal-form">
+      <form onsubmit="startRegister(event)" class="modal-form" id="registerForm">
         <input id="regName" placeholder="Full name" autocomplete="name" required>
         <input id="regEmail" type="email" placeholder="Email address" autocomplete="email" required>
-        <input id="regPhone" type="tel" placeholder="Phone number" autocomplete="tel" required>
         <input id="regAge" type="number" min="13" max="120" placeholder="Age" required>
         <input id="regPassword" type="password" placeholder="Create password (min 8 characters)" autocomplete="new-password" minlength="8" required>
         <input id="regConfirm" type="password" placeholder="Confirm password" autocomplete="new-password" minlength="8" required>
-        <button class="checkout">CREATE ACCOUNT ↗</button>
+        <button class="checkout">SEND VERIFICATION CODE ↗</button>
+      </form>
+      <form onsubmit="verifyRegister(event)" class="modal-form" id="registerOtpForm" style="display:none">
+        <p class="welcome-copy" id="registerOtpNote"></p>
+        <input id="regOtp" placeholder="6-digit code" autocomplete="one-time-code" inputmode="numeric" required>
+        <button class="checkout">VERIFY & CREATE ACCOUNT ↗</button>
+        <button type="button" class="text-btn center-btn" onclick="backToRegisterForm()">USE A DIFFERENT EMAIL</button>
       </form>
       <button class="guest-btn" onclick="continueGuest()">CONTINUE AS GUEST</button>
       <button class="text-btn center-btn" onclick="showLoginFromWelcome()">ALREADY HAVE AN ACCOUNT? LOGIN</button>
@@ -149,10 +154,13 @@
   <div class="modal-backdrop" id="resetModal">
     <div class="modal small-modal"><button class="close" onclick="closeModal('resetModal')">×</button>
       <p class="eyebrow">NOVAZOVA ACCOUNT</p><h2>Reset <em>password.</em></h2>
-      <p class="welcome-copy">Enter the email and phone number you signed up with, then choose a new password.</p>
-      <form onsubmit="resetPassword(event)" class="modal-form">
+      <p class="welcome-copy" id="resetStep1Note">Enter the email you signed up with — we'll send a verification code.</p>
+      <form onsubmit="startReset(event)" class="modal-form" id="resetStep1Form">
         <input id="resetEmail" type="email" placeholder="Email address" autocomplete="email" required>
-        <input id="resetPhone" type="tel" placeholder="Phone number" autocomplete="tel" required>
+        <button class="checkout">SEND CODE ↗</button>
+      </form>
+      <form onsubmit="verifyReset(event)" class="modal-form" id="resetStep2Form" style="display:none">
+        <input id="resetOtp" placeholder="6-digit code" autocomplete="one-time-code" inputmode="numeric" required>
         <input id="resetNewPassword" type="password" placeholder="New password (min 8 characters)" autocomplete="new-password" minlength="8" required>
         <input id="resetConfirm" type="password" placeholder="Confirm new password" autocomplete="new-password" minlength="8" required>
         <button class="checkout">RESET PASSWORD ↗</button>
