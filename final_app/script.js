@@ -133,6 +133,20 @@ async function login(e){
     currentUser=data.user; localStorage.setItem('novaUser',JSON.stringify(data.user)); closeModal('loginModal'); toast(`Welcome back, ${data.user.name.split(' ')[0]} ✨`);
   }catch(err){toast(err.message);}
 }
+async function resetPassword(e){
+  e.preventDefault();
+  const email=document.getElementById('resetEmail').value.trim();
+  const phone=document.getElementById('resetPhone').value.trim();
+  const newPassword=document.getElementById('resetNewPassword').value;
+  const confirm=document.getElementById('resetConfirm').value;
+  if(newPassword!==confirm){toast('Passwords do not match');return;}
+  try{
+    const r=await apiFetch('/api/reset-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,phone,newPassword})});
+    const data=await r.json();
+    if(!r.ok) throw new Error(data.error||'Could not reset password');
+    closeModal('resetModal'); toast('Password reset! You can log in now ✨'); setTimeout(()=>openModal('loginModal'),300);
+  }catch(err){toast(err.message);}
+}
 
 function updateProfileButton(){
  const btn=document.querySelector('.actions button[aria-label="Profile"]');
