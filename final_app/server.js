@@ -100,4 +100,3 @@ function serve(req,res){
 }
 const PORT=process.env.PORT||3000;
 http.createServer(serve).listen(PORT,'0.0.0.0',()=>console.log(`Novazova running at http://localhost:${PORT}`));
-
