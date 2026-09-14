@@ -3,19 +3,22 @@ const fs=require('fs');
 const path=require('path');
 const crypto=require('crypto');
 const url=require('url');
-let nodemailer=null;try{nodemailer=require('nodemailer');}catch(e){}
 
-const GMAIL_USER=process.env.GMAIL_USER||'';
-const GMAIL_APP_PASSWORD=process.env.GMAIL_APP_PASSWORD||'';
-let mailer=null;
-if(nodemailer&&GMAIL_USER&&GMAIL_APP_PASSWORD){
- mailer=nodemailer.createTransport({service:'gmail',auth:{user:GMAIL_USER,pass:GMAIL_APP_PASSWORD}});
-}
+const BREVO_API_KEY=process.env.BREVO_API_KEY||'';
+const BREVO_SENDER_EMAIL=process.env.BREVO_SENDER_EMAIL||'';
+const BREVO_SENDER_NAME=process.env.BREVO_SENDER_NAME||'Novazova';
+
 async function sendOtpEmail(to,otp,purpose){
  const subject=purpose==='reset'?'Novazova password reset code':'Novazova signup verification code';
  const text=`Your Novazova ${purpose==='reset'?'password reset':'signup verification'} code is: ${otp}\n\nThis code expires in 10 minutes. If you didn't request this, you can ignore this email.`;
- if(mailer){
-  await mailer.sendMail({from:`Novazova <${GMAIL_USER}>`,to,subject,text});
+ const html=`<p>Your Novazova ${purpose==='reset'?'password reset':'signup verification'} code is:</p><h2 style="letter-spacing:4px">${otp}</h2><p>This code expires in 10 minutes. If you didn't request this, you can ignore this email.</p>`;
+ if(BREVO_API_KEY&&BREVO_SENDER_EMAIL){
+  const r=await fetch('https://api.brevo.com/v3/smtp/email',{
+   method:'POST',
+   headers:{'api-key':BREVO_API_KEY,'Content-Type':'application/json','Accept':'application/json'},
+   body:JSON.stringify({sender:{email:BREVO_SENDER_EMAIL,name:BREVO_SENDER_NAME},to:[{email:to}],subject,htmlContent:html,textContent:text})
+  });
+  if(!r.ok){const errBody=await r.text().catch(()=>'');throw new Error(`Brevo API error ${r.status}: ${errBody}`);}
  }else{
   console.log(`\n[DEV MODE - no email credentials set] OTP for ${to} (${purpose}): ${otp}\n`);
  }

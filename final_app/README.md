@@ -27,8 +27,35 @@ opened the page.
 6. On that admin page, click **Download CSV** to get `novazova_users.csv`, which
    opens directly in Excel.
 
+## Email verification (OTP)
+Signup and password reset now require a 6-digit code sent to the user's email —
+there's no phone number field anymore, the whole app runs on email.
+
+**Important: sends via Brevo, not Gmail SMTP.** Render's free tier blocks the
+network ports regular email (SMTP) needs, so Gmail-based sending doesn't work
+here. Brevo sends over regular HTTPS instead, which isn't blocked, and its free
+tier covers 300 emails/day — plenty for a project like this.
+
+**To make this actually send real emails, set these environment variables in
+Render's Environment tab:**
+- `BREVO_API_KEY` — your Brevo API key
+- `BREVO_SENDER_EMAIL` — the email address you verified as your sender in Brevo
+
+**How to set up Brevo (free, ~5 minutes):**
+1. Go to brevo.com and create a free account
+2. In Brevo, go to Settings → Senders & IP → add and verify a sender email
+   (they'll email that address a confirmation link)
+3. Go to Settings → API Keys → generate a new API key, copy it
+4. Add `BREVO_API_KEY` and `BREVO_SENDER_EMAIL` as environment variables on Render
+
+**If you don't set these up (e.g. testing locally without setup):** the app
+still works — it just prints the OTP code to the server console/logs instead of
+emailing it, so you can test the whole flow without a Brevo account. Look for a
+line like `[DEV MODE - no email credentials set] OTP for x@y.com: 123456` in the
+terminal or Render's Logs tab.
+
 ## Admin login
-The `/admin` page, the users API, and the CSV download are now password-protected.
+The `/admin` page, the users API, and the CSV download are password-protected.
 
 - Default username: `admin`
 - Default password: `Nova03Zova24`
@@ -48,7 +75,7 @@ npm start
 then open `http://localhost:3000`.
 
 ## Data
-- `data/users.csv` — id, name, email, phone, age, created_at. This is your
+- `data/users.csv` — id, name, email, age, created_at. This is your
   "spreadsheet" — open it directly in Excel/Google Sheets any time, or use the
   Download CSV button on `/admin`.
 - `data/auth.json` — password hashes only (scrypt), kept separate from the CSV on
